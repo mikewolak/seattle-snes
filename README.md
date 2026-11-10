@@ -1,6 +1,6 @@
 # SNES Emulator for the Midway Seattle Board
 
-**Snes9x 1.39 on the Midway A-21464 arcade board: QED R5000 at 150 MHz, 8 MB DRAM, 3Dfx Voodoo SST-1, DCS2 ADSP-2115 sound. 65C816 loop, SPC700 loop, tile renderers and line fills in R5000 assembler; frame of 8-bit palette indices coloured and scaled by the Voodoo texture unit. Super Mario World: 60.0 emulated and 59.8 shown frames a second on the board, sound at 31,250 Hz stereo.**
+**Snes9x 1.39 on the Midway A-21464 arcade board: QED R5000 at 150 MHz, 8 MB DRAM, 3Dfx Voodoo SST-1, DCS2 ADSP-2115 sound. 65C816 loop, SPC700 loop, tile renderers and line fills in R5000 assembler; frame of 8-bit palette indices colored and scaled by the Voodoo texture unit. Super Mario World: 60.0 emulated and 59.8 shown frames a second on the board, sound at 31,250 Hz stereo.**
 
 <p align="center"><img src="docs/img/fig1_super_mario_world.png" width="640" alt="Super Mario World attract demo"></p>
 <p align="center"><sub><b>Figure 1.</b> Super Mario World (USA), attract demo, frame of 8-bit palette indices displayed through the TMU palette. MAME 0.289 driver blitz99, snapshot of the emulated Voodoo output in the 512 x 240 mode, shown at the 4:3 proportion of the monitor. The program has no screen capture path on the board; the picture on the board was confirmed correct by the owner at the cabinet.</sub></p>
