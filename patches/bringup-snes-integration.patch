@@ -1,0 +1,89 @@
+diff -ruN a/bringup/Makefile b/bringup/Makefile
+--- a/bringup/Makefile	2026-11-09 21:26:24
++++ b/bringup/Makefile	2026-11-09 21:26:41
+@@ -171,6 +171,42 @@
+ 	@mkdir -p $(dir $@)
+ 	cp "$(NESROM)" $@
+ 
++# ---- SNES (disk build only): Snes9x 1.39 core (Gary Henderson, Jerremy
++# Koot et al.; non-commercial licence, ../docs/SNES.md), the C++ core files of
++# the release source s9xs139.zip with patches/snes9x-1.39-seattle.patch
++# applied, and the Seattle platform layer snes/ (C99). The core's malloc and
++# free go to the platform arena (snes/s9x_seattle.c); S9X_MAX_ROM_SIZE sets
++# the ROM buffer. guru.c (fatal-error screen of the exception dispatcher)
++# and sgrab.c (its serial commands) are linked as in the Quake build.
++SNES9X       ?= $(HOME)/snes9x-1.39/release
++SNES_MAX_ROM ?= 0x280000
++ifeq ($(FATFS),1)
++CXX        := $(CROSS)g++
++SNES_CORE  := cpuops cpuexec sa1cpu spc700 soundux apu fxinst fxemu c4 c4emu cpu sa1 sdd1 tile srtc gfx \
++              memmap snaporig clip dsp1 ppu dma snes9x snapshot cheats cheats2 data globals
++SNESDEFS   := -DLSB_FIRST -DVAR_CYCLES -DCPU_SHUTDOWN -DSPC700_SHUTDOWN -DSPC700_C -DEXECUTE_SUPERFX_PER_LINE \
++              -DS9X_MAX_ROM_SIZE=$(SNES_MAX_ROM)
++SNESCXX    := $(ARCHFLAGS) -nostdinc -isystem $(NEWLIB)/include -isystem $(shell $(CC) -print-file-name=include) \
++              -isystem $(shell $(CC) -print-file-name=include-fixed) -I $(SNES9X) -O2 -fno-exceptions -fno-rtti \
++              -fno-strict-aliasing -w -ffunction-sections -fdata-sections $(SNESDEFS) -Dmalloc=s9x_malloc -Dfree=s9x_free
++SNESINC    := -std=gnu99 -isystem $(shell $(CC) -print-file-name=include-fixed) -I snes -I $(SNES9X) -I fatfs $(SNESDEFS)
++SNESOBJS   := $(addprefix $(BUILD)/snes/core/, $(SNES_CORE:=.o)) \
++              $(addprefix $(BUILD)/snes/, s9x_seattle.o menu.o blit.o) $(BUILD)/sys/guru.o $(BUILD)/sys/sgrab.o
++OBJS       += $(SNESOBJS)
++
++$(BUILD)/snes/core/%.o: $(SNES9X)/%.cpp
++	@mkdir -p $(dir $@)
++	$(CXX) $(SNESCXX) -c $< -o $@
++
++$(BUILD)/snes/%.o: snes/%.c
++	@mkdir -p $(dir $@)
++	$(CC) $(CFLAGS) $(SNESINC) -O2 -ffunction-sections -fdata-sections -MMD -MP -c $< -o $@
++
++$(BUILD)/snes/blit.o: snes/blit.S
++	@mkdir -p $(dir $@)
++	$(CC) $(ARCHFLAGS) -c $< -o $@
++endif
++
+ all: $(BUILD)/bringup512.u32
+ 
+ rom256: $(BUILD)/bringup.bin
+diff -ruN a/bringup/src/appmenu.c b/bringup/src/appmenu.c
+--- a/bringup/src/appmenu.c	2026-11-09 21:26:24
++++ b/bringup/src/appmenu.c	2026-11-09 21:26:24
+@@ -48,6 +48,7 @@
+ #define APP_REQ     (*(volatile uint32_t *)0xa07f0020u)   /* request to the disk build */
+ #define APP_Q1      0x20315120u        /* " 1Q " little-endian "Q1  " */
+ #define APP_NES     0x2053454eu        /* "NES " */
++#define APP_SNES    0x53454e53u        /* "SNES" */
+ #define DISK_IMAGE_LBA 0x3EE080u
+ #define MS(n)       ((n) * 75000u)
+ 
+@@ -87,13 +88,13 @@
+ };
+ 
+ static const char *const main_text[] = { "CF MENU", "OTHER APPS", "UTILITIES" };
+-static const char *const apps_text[] = { "QUAKE 1", "NES", "BACK" };
+-static const uint32_t apps_req[] = { APP_Q1, APP_NES };
++static const char *const apps_text[] = { "QUAKE 1", "NES", "SNES", "BACK" };
++static const uint32_t apps_req[] = { APP_Q1, APP_NES, APP_SNES };
+ static const char *const util_text[] = { "DEBUG", "DIP SWITCHES", "DIAGNOSTICS", "SETTINGS", "NETWORK",
+                                          "PIC TALKER", "SERIAL MONITOR", "BACK" };
+ 
+ static struct page pg_main = { 0, main_text, 0, 3, 0, 0 };
+-static struct page pg_apps = { "OTHER APPS", apps_text, 0, 3, 0, 0 };
++static struct page pg_apps = { "OTHER APPS", apps_text, 0, 4, 0, 0 };
+ static struct page pg_util = { "UTILITIES", util_text, 0, 8, 0, 0 };
+ 
+ /* the CF menu: the bootable games of the card, then BACK; with none, the
+diff -ruN a/bringup/src/main.c b/bringup/src/main.c
+--- a/bringup/src/main.c	2026-11-09 21:26:24
++++ b/bringup/src/main.c	2026-11-09 21:26:24
+@@ -181,6 +181,11 @@
+             mon_printf("app: NES\n");
+             menu_games();
+             ((void (*)(void))0xbfc00000u)();    /* back to the ROM menu */
++        } else if (r == 0x53454e53u) {          /* "SNES": the SNES game list */
++            extern void menu_snes_games(void);
++            mon_printf("app: SNES\n");
++            menu_snes_games();
++            ((void (*)(void))0xbfc00000u)();    /* back to the ROM menu */
+         }
+     }
+ #endif

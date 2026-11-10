@@ -1,0 +1,1088 @@
+diff -ru a/release/dsp1.h b/release/dsp1.h
+--- a/release/dsp1.h	2026-11-10 09:32:52
++++ b/release/dsp1.h	2026-11-10 09:32:52
+@@ -233,8 +233,8 @@
+ void S9xResetDSP1 ();
+ uint8 S9xGetDSP (uint16 Address);
+ void S9xSetDSP (uint8 Byte, uint16 Address);
++extern struct SDSP1 DSP1;
+ END_EXTERN_C
+ 
+-extern struct SDSP1 DSP1;
+ 
+ #endif
+diff -ru a/release/gfx.cpp b/release/gfx.cpp
+--- a/release/gfx.cpp	2026-11-10 09:32:52
++++ b/release/gfx.cpp	2026-11-10 09:32:52
+@@ -312,8 +312,8 @@
+     GFX.PixSize = 1;
+     if (Settings.SixteenBit)
+     {
+-	DrawTilePtr = DrawTile16;
+-	DrawClippedTilePtr = DrawClippedTile16;
++	DrawTilePtr = S9X_DRAWTILE16;
++	DrawClippedTilePtr = S9X_DRAWCTILE16;
+ 	DrawLargePixelPtr = DrawLargePixel16;
+ 	DrawHiResTilePtr= DrawTile16;
+ 	DrawHiResClippedTilePtr = DrawClippedTile16;
+@@ -526,6 +526,10 @@
+     IPPU.DirectColourMapsNeedRebuild = FALSE;
+ }
+ 
++/* Seattle: rendered frames left as RGB565 after a frame of palette indices
++   that changed over to RGB565 (S9xUpdateScreenLines) */
++static uint32 s9x_pal8_hold;
++
+ void S9xStartScreenRefresh ()
+ {
+     if (GFX.InfoStringTimeout > 0 && --GFX.InfoStringTimeout == 0)
+@@ -540,6 +544,9 @@
+ 	}
+ 	IPPU.RenderedFramesCount++;
+ 	IPPU.PreviousLine = IPPU.CurrentLine = 0;
++	s9x_pal8_frame = 0;
++	if (s9x_pal8_hold)
++	    s9x_pal8_hold--;
+ 	IPPU.MaxBrightness = PPU.Brightness;
+ 	IPPU.LatchedBlanking = PPU.ForcedBlanking;
+ 	IPPU.LatchedInterlace = (Memory.FillRAM[0x2133] & 1);
+@@ -758,8 +765,8 @@
+ {
+     if (normal)
+     {
+-	DrawTilePtr = DrawTile16;
+-	DrawClippedTilePtr = DrawClippedTile16;
++	DrawTilePtr = S9X_DRAWTILE16;
++	DrawClippedTilePtr = S9X_DRAWCTILE16;
+ 	DrawLargePixelPtr = DrawLargePixel16;
+     }
+     else
+@@ -936,8 +943,8 @@
+ 	{
+ 	    if (Settings.SixteenBit)
+ 	    {
+-		DrawTilePtr = DrawTile16;
+-		DrawClippedTilePtr = DrawClippedTile16;
++		DrawTilePtr = S9X_DRAWTILE16;
++		DrawClippedTilePtr = S9X_DRAWCTILE16;
+ 	    }
+ 	    else
+ 	    {
+@@ -2131,6 +2138,37 @@
+ 	    Count = Width - Count;
+ 	    int Middle = Count >> 3;
+ 	    Count &= 7;
++	    /* Seattle: the unclipped 8 x 8 tiles in runs up to the next 32-tile
++	       boundary of the tile map, by s9x_tilerun16 (tile16.S); the map
++	       pointer changes at the boundaries as in the loop below, and
++	       GFX.Z1, GFX.Z2 are left as that loop leaves them */
++	    if (Middle > 0 && BG.TileSize == 8 && GFX.PixSize == 1 &&
++		(DrawTilePtr == s9x_tile8 ||
++		 (DrawTilePtr == s9x_tile16 && !BG.DirectColourMode && Z1 && Z2)))
++	    {
++		int C = Middle;
++		while (C > 0)
++		{
++		    int n = 32 - (Quot & 31);
++		    if (n > C)
++			n = C;
++		    if (DrawTilePtr == s9x_tile8)
++			s9x_tilerun8 (t, n, s, VirtAlign, Lines, Z1 | (Z2 << 8));
++		    else
++			s9x_tilerun16 (t, n, s, VirtAlign, Lines, Z1 | (Z2 << 8));
++		    Tile = READ_2BYTES(t + n - 1);
++		    t += n;
++		    Quot += n;
++		    s += 8 * n;
++		    C -= n;
++		    if (Quot == 32)
++			t = b2;
++		    else if (Quot == 64)
++			t = b1;
++		}
++		GFX.Z1 = GFX.Z2 = depths [(Tile & 0x2000) >> 13];
++	    }
++	    else
+ 	    for (int C = Middle; C > 0; s += 8 * GFX.PixSize, Quot++, C--)
+ 	    {
+ 		Tile = READ_2BYTES(t);
+@@ -3162,12 +3200,143 @@
+     }
+ }
+ 
+-void S9xUpdateScreen ()
++/* Seattle: the backdrop passes of S9xUpdateScreen. Each main-screen pixel
++   of p .. whose depth byte d is 0 (no layer drawn) takes f (sub-screen
++   depth byte, pixel address); four depth bytes are tested in one aligned
++   word (no zero byte: four covered pixels skipped). The functors give the
++   values of the original per-pixel loops: sub-screen depth 0 the back
++   colour, 1 the back colour with the fixed colour, else the back colour
++   with the sub-screen pixel at p + Delta. */
++#define S9X_HAS_ZERO_BYTE(w) (((w) - 0x01010101u) & ~(w) & 0x80808080u)
++
++template <class F>
++static inline void S9xComposeBack (uint16 *p, uint8 *d, uint8 *e, uint8 *s, const F &f)
+ {
++    while (d < e && ((uint32) d & 3))
++    {
++	if (*d == 0)
++	    *p = f (*s, p);
++	d++, p++, s++;
++    }
++    while (d + 4 <= e)
++    {
++	if (S9X_HAS_ZERO_BYTE (*(uint32 *) d))
++	{
++	    if (d [0] == 0)
++		p [0] = f (s [0], p);
++	    if (d [1] == 0)
++		p [1] = f (s [1], p + 1);
++	    if (d [2] == 0)
++		p [2] = f (s [2], p + 2);
++	    if (d [3] == 0)
++		p [3] = f (s [3], p + 3);
++	}
++	d += 4, p += 4, s += 4;
++    }
++    while (d < e)
++    {
++	if (*d == 0)
++	    *p = f (*s, p);
++	d++, p++, s++;
++    }
++}
++
++struct S9xBackSub1_2 {
++    uint32 back; uint16 back_fixed; int delta;
++    uint16 operator () (uint8 z, const uint16 *p) const
++    { return z ? (z != 1 ? (uint16) COLOR_SUB1_2 (back, p [delta]) : back_fixed) : (uint16) back; }
++};
++struct S9xBackSub {
++    uint32 back; uint16 back_fixed; int delta;
++    uint16 operator () (uint8 z, const uint16 *p) const
++    { return z ? (z != 1 ? (uint16) COLOR_SUB (back, p [delta]) : back_fixed) : (uint16) back; }
++};
++struct S9xBackAdd1_2 {
++    uint32 back; uint16 back_fixed; int delta;
++    uint16 operator () (uint8 z, const uint16 *p) const
++    { return z ? (z != 1 ? (uint16) COLOR_ADD1_2 (back, p [delta]) : back_fixed) : (uint16) back; }
++};
++struct S9xBackAdd {
++    uint32 back; uint16 back_fixed; int delta;
++    uint16 operator () (uint8 z, const uint16 *p) const
++    { return z ? (z != 1 ? (uint16) COLOR_ADD (back, p [delta]) : back_fixed) : (uint16) back; }
++};
++struct S9xBackCopy {
++    uint32 back; uint16 fixed; int delta;
++    uint16 operator () (uint8 z, const uint16 *p) const
++    { return z ? (z != 1 ? p [delta] : fixed) : (uint16) back; }
++};
++struct S9xBackFill {
++    uint16 back;
++    uint16 operator () (uint8, const uint16 *) const { return back; }
++};
++
++/* Seattle: frame of palette indices (gfx.h). The colours of the frame are
++   taken at its first lines: IPPU.ScreenColors, with entry 16 replaced by
++   the fixed colour. Entry 16 is the pixel value 0 of a palette and is
++   never drawn by a tile of 2 or 4 bits a pixel (BG modes 0 and 1), so the
++   index 16 marks the backdrop inside the sub-screen colour window. Lines
++   rendered later in the frame are drawn as indices only while the
++   colours and the fixed colour are the same; else the lines drawn so far
++   are expanded to RGB565 in GFX.Screen (s9x_pal8_expand) and the frame
++   continues there. Lines without colour math use entry 16 for black
++   (forced blanking, outside the main-screen colour window); a frame that
++   needs two different colours in entry 16 continues as RGB565 as well. A
++   frame that changed over is followed by 60 rendered frames drawn as
++   RGB565 from their first line. */
++static uint16 s9x_pal8_special_set;
++
++static void s9x_pal8_expand (uint32 y1)
++{
++    for (uint32 y = 0; y < y1; y++)
++    {
++	const uint8 *s = GFX.SubScreen + y * 256;
++	uint16 *d = (uint16 *) (GFX.Screen + y * GFX.Pitch2);
++	for (uint32 x = 0; x < 256; x++)
++	    d [x] = s9x_pal8_pal [s [x]];
++    }
++    if (y1)
++	s9x_pal8_hold = 60;
++}
++
++/* TRUE: the lines of this call are drawn as palette indices. need: they
++   use entry 16 for the colour special */
++static bool8 s9x_pal8_lines (bool8 need, uint16 special)
++{
++    if (!s9x_pal8 || s9x_pal8_hold || s9x_pal8_frame == 2 || PPU.BGMode > 1 ||
++	(PPU.Mosaic > 1 && (PPU.BGMosaic [0] || PPU.BGMosaic [1] ||
++			     PPU.BGMosaic [2] || PPU.BGMosaic [3])))
++	return FALSE;
++    if (s9x_pal8_frame == 0)
++    {
++	memcpy (s9x_pal8_pal, IPPU.ScreenColors, sizeof s9x_pal8_pal);
++	s9x_pal8_special_set = 0;
++	s9x_pal8_frame = 1;
++    }
++    else if (memcmp (s9x_pal8_pal, IPPU.ScreenColors, 16 * sizeof (uint16)) ||
++	     memcmp (s9x_pal8_pal + 17, IPPU.ScreenColors + 17, 239 * sizeof (uint16)))
++	return FALSE;
++    if (need)
++    {
++	if (!s9x_pal8_special_set)
++	{
++	    s9x_pal8_pal [16] = special;
++	    s9x_pal8_special_set = 1;
++	}
++	else if (s9x_pal8_pal [16] != special)
++	    return FALSE;
++    }
++    return TRUE;
++}
++
++static void S9xUpdateScreenLines ()
++{
+     int32 x2 = 1;
++    int p8_done = 0;
+ 
+     GFX.S = GFX.Screen;
+     GFX.r2131 = Memory.FillRAM [0x2131];
++    s9x_vmath = 0;
+     GFX.r212c = Memory.FillRAM [0x212c];
+     GFX.r212d = Memory.FillRAM [0x212d];
+     GFX.r2130 = Memory.FillRAM [0x2130];
+@@ -3283,6 +3452,101 @@
+ 					   IPPU.XB [PPU.FixedColourGreen],
+ 					   IPPU.XB [PPU.FixedColourBlue]);
+ 
++	    /* Seattle: addition (CGADSUB bit 7 clear) blended on the Voodoo;
++	       the sub screen starts as the fixed colour (its backdrop) */
++	    if (s9x_vmath_enable && !(GFX.r2131 & 0x80))
++	    {
++		s9x_vmath = 1;
++		s9x_vmath_used = 1;
++		s9x_vmath_half = (GFX.r2131 & 0x40) != 0;
++		uint32 b = GFX.FixedColour | (GFX.FixedColour << 16);
++		for (uint32 y = starty; y <= endy; y++)
++		{
++		    uint32 *p = (uint32 *) (GFX.SubScreen + y * GFX.Pitch2);
++		    uint32 *q = (uint32 *) ((uint16 *) p + IPPU.RenderedScreenWidth);
++		    while (p < q)
++			*p++ = b;
++		}
++	    }
++
++	    /* Seattle: addition of the sub screen to the backdrop only
++	       (CGADSUB 0x20: no layer of the main screen added, not halved),
++	       back colour 0 and no main-screen colour window. The passes below
++	       then give: a pixel of a main-screen layer where one is drawn,
++	       else the sub-screen pixel where a sub-screen layer is drawn,
++	       else the fixed colour inside the sub-screen colour window
++	       (sub depth 1) and the back colour 0 outside it. Main-screen
++	       depths (MAIN_SCREEN_DEPTH + 2 and above) exceed every sub-screen
++	       depth (at most SUB_SCREEN_DEPTH + 17) and the main screen is
++	       drawn with the normal tile renderers in this case, so the same
++	       pixels result from: the main screen filled with the backdrop
++	       value (fixed colour inside the sub-screen colour window, 0
++	       outside), the main screen drawn into it and into the main depth
++	       buffer, then the sub screen into the same two buffers, where the
++	       depth test leaves every pixel of the main screen in place. The
++	       sub-screen buffer and its depth buffer are not used. */
++	    if (s9x_direct && GFX.r2131 == 0x20 && IPPU.ScreenColors [0] == 0 &&
++		!IPPU.Clip [0].Count [5] && !s9x_vmath && x2 == 1 &&
++		IPPU.RenderedScreenWidth == 256)
++	    {
++		static uint16 line [256] __attribute__ ((aligned (32)));
++		uint16 fixed = (uint16) GFX.FixedColour;
++		pClip = &IPPU.Clip [1];
++		{
++		    if (s9x_pal8_lines (TRUE, fixed))
++		    {
++			static uint8 line8 [256] __attribute__ ((aligned (32)));
++			uint8 *scr = GFX.SubScreen;
++			if (pClip->Count [5])
++			{
++			    S9xFillLine (line8, 0, sizeof line8);
++			    for (uint32 c = 0; c < pClip->Count [5]; c++)
++				for (uint32 x = pClip->Left [c][5]; x < pClip->Right [c][5]; x++)
++				    line8 [x] = 16;
++			}
++			for (uint32 y = starty; y <= endy; y++)
++			{
++			    if (pClip->Count [5])
++				S9xCopyLine (scr + y * 256, line8, sizeof line8);
++			    else
++				S9xFillLine (scr + y * 256, 0x10101010, sizeof line8);
++			    S9xFillLine (GFX.ZBuffer + y * GFX.ZPitch, 0, 256);
++			}
++			GFX.DB = GFX.ZBuffer;
++			GFX.S = scr;
++			s9x_pal8_now = 1;
++			RenderScreen (scr, FALSE, FALSE, MAIN_SCREEN_DEPTH);
++			if (ANYTHING_ON_SUB)
++			    RenderScreen (scr, TRUE, TRUE, SUB_SCREEN_DEPTH);
++			s9x_pal8_now = 0;
++			GFX.S = GFX.Screen;
++			p8_done = 1;
++			goto s9x_direct_done;
++		    }
++		}
++		if (pClip->Count [5])
++		{
++		    S9xFillLine (line, 0, sizeof line);
++		    for (uint32 c = 0; c < pClip->Count [5]; c++)
++			for (uint32 x = pClip->Left [c][5]; x < pClip->Right [c][5]; x++)
++			    line [x] = fixed;
++		}
++		for (uint32 y = starty; y <= endy; y++)
++		{
++		    uint16 *p = (uint16 *) (GFX.Screen + y * GFX.Pitch2);
++		    if (pClip->Count [5])
++			S9xCopyLine (p, line, sizeof line);
++		    else
++			S9xFillLine (p, fixed | (fixed << 16), sizeof line);
++		    S9xFillLine (GFX.ZBuffer + y * GFX.ZPitch, 0, 256);
++		}
++		GFX.DB = GFX.ZBuffer;
++		RenderScreen (GFX.Screen, FALSE, FALSE, MAIN_SCREEN_DEPTH);
++		if (ANYTHING_ON_SUB)
++		    RenderScreen (GFX.Screen, TRUE, TRUE, SUB_SCREEN_DEPTH);
++		goto s9x_direct_done;
++	    }
++
+ 	    // Clear the z-buffer, marking areas 'covered' by the fixed
+ 	    // colour as depth 1.
+ 	    pClip = &IPPU.Clip [1];
+@@ -3293,10 +3557,8 @@
+ 		// Colour window enabled.
+ 		for (uint32 y = starty; y <= endy; y++)
+ 		{
+-		    ZeroMemory (GFX.SubZBuffer + y * GFX.ZPitch,
+-				IPPU.RenderedScreenWidth);
+-		    ZeroMemory (GFX.ZBuffer + y * GFX.ZPitch,
+-				IPPU.RenderedScreenWidth);
++		    S9xFillLine (GFX.SubZBuffer + y * GFX.ZPitch, 0, IPPU.RenderedScreenWidth);
++		    S9xFillLine (GFX.ZBuffer + y * GFX.ZPitch, 0, IPPU.RenderedScreenWidth);
+ 		    if (IPPU.Clip [0].Count [5])
+                     {
+                         uint32 *p = (uint32 *) (GFX.SubScreen + y * GFX.Pitch2);
+@@ -3332,10 +3594,8 @@
+ 	    {
+ 		for (uint32 y = starty; y <= endy; y++)
+ 		{
+-		    ZeroMemory (GFX.ZBuffer + y * GFX.ZPitch,
+-				IPPU.RenderedScreenWidth);
+-		    memset (GFX.SubZBuffer + y * GFX.ZPitch, 1,
+-			    IPPU.RenderedScreenWidth);
++		    S9xFillLine (GFX.ZBuffer + y * GFX.ZPitch, 0, IPPU.RenderedScreenWidth);
++		    S9xFillLine (GFX.SubZBuffer + y * GFX.ZPitch, 0x01010101, IPPU.RenderedScreenWidth);
+ 
+ 		    if (IPPU.Clip [0].Count [5])
+ 		    {
+@@ -3438,122 +3698,37 @@
+ 				continue;
+ 			}
+ 
++			uint16 *p = (uint16 *) (GFX.Screen + y * GFX.Pitch2) + Left;
++			uint8 *d = GFX.ZBuffer + y * GFX.ZPitch + Left;
++			uint8 *s = GFX.SubZBuffer + y * GFX.ZPitch + Left;
++			uint8 *e = GFX.ZBuffer + y * GFX.ZPitch + Right;
++
+ 			if (GFX.r2131 & 0x80)
+ 			{
+ 			    if (GFX.r2131 & 0x40)
+ 			    {
+ 				// Subtract, halving the result.
+-				register uint16 *p = (uint16 *) (GFX.Screen + y * GFX.Pitch2) + Left;
+-				register uint8 *d = GFX.ZBuffer + y * GFX.ZPitch;
+-				register uint8 *s = GFX.SubZBuffer + y * GFX.ZPitch + Left;
+-				register uint8 *e = d + Right;
+-				uint16 back_fixed = COLOR_SUB (back, GFX.FixedColour);
+-
+-				d += Left;
+-				while (d < e)
+-				{
+-				    if (*d == 0)
+-				    {
+-					if (*s)
+-					{
+-					    if (*s != 1)
+-						*p = COLOR_SUB1_2 (back, *(p + GFX.Delta));
+-					    else
+-						*p = back_fixed;
+-					}
+-					else
+-					    *p = (uint16) back;
+-				    }
+-				    d++;
+-				    p++;
+-				    s++;
+-				}
++				S9xBackSub1_2 f = { back, (uint16) COLOR_SUB (back, GFX.FixedColour), GFX.Delta };
++				S9xComposeBack (p, d, e, s, f);
+ 			    }
+ 			    else
+ 			    {
+ 				// Subtract
+-				register uint16 *p = (uint16 *) (GFX.Screen + y * GFX.Pitch2) + Left;
+-				register uint8 *s = GFX.SubZBuffer + y * GFX.ZPitch + Left;
+-				register uint8 *d = GFX.ZBuffer + y * GFX.ZPitch;
+-				register uint8 *e = d + Right;
+-				uint16 back_fixed = COLOR_SUB (back, GFX.FixedColour);
+-
+-				d += Left;
+-				while (d < e)
+-				{
+-				    if (*d == 0)
+-				    {
+-					if (*s)
+-					{
+-					    if (*s != 1)
+-						*p = COLOR_SUB (back, *(p + GFX.Delta));
+-					    else
+-						*p = back_fixed;
+-					}
+-					else
+-					    *p = (uint16) back;
+-				    }
+-				    d++;
+-				    p++;
+-				    s++;
+-				}
++				S9xBackSub f = { back, (uint16) COLOR_SUB (back, GFX.FixedColour), GFX.Delta };
++				S9xComposeBack (p, d, e, s, f);
+ 			    }
+ 			}
+ 			else
+ 			if (GFX.r2131 & 0x40)
+ 			{
+-			    register uint16 *p = (uint16 *) (GFX.Screen + y * GFX.Pitch2) + Left;
+-			    register uint8 *d = GFX.ZBuffer + y * GFX.ZPitch;
+-			    register uint8 *s = GFX.SubZBuffer + y * GFX.ZPitch + Left;
+-			    register uint8 *e = d + Right;
+-			    uint16 back_fixed = COLOR_ADD (back, GFX.FixedColour);
+-			    d += Left;
+-			    while (d < e)
+-			    {
+-				if (*d == 0)
+-				{
+-				    if (*s)
+-				    {
+-					if (*s != 1)
+-					    *p = COLOR_ADD1_2 (back, *(p + GFX.Delta));
+-					else
+-					    *p = back_fixed;
+-				    }
+-				    else
+-					*p = (uint16) back;
+-				}
+-				d++;
+-				p++;
+-				s++;
+-			    }
++			    S9xBackAdd1_2 f = { back, (uint16) COLOR_ADD (back, GFX.FixedColour), GFX.Delta };
++			    S9xComposeBack (p, d, e, s, f);
+ 			}
+ 			else
+ 			if (back != 0)
+ 			{
+-			    register uint16 *p = (uint16 *) (GFX.Screen + y * GFX.Pitch2) + Left;
+-			    register uint8 *d = GFX.ZBuffer + y * GFX.ZPitch;
+-			    register uint8 *s = GFX.SubZBuffer + y * GFX.ZPitch + Left;
+-			    register uint8 *e = d + Right;
+-			    uint16 back_fixed = COLOR_ADD (back, GFX.FixedColour);
+-			    d += Left;
+-			    while (d < e)
+-			    {
+-				if (*d == 0)
+-				{
+-				    if (*s)
+-				    {
+-					if (*s != 1)
+-					    *p = COLOR_ADD (back, *(p + GFX.Delta));
+-					else	
+-					    *p = back_fixed;
+-				    }
+-				    else
+-					*p = (uint16) back;
+-				}
+-				d++;
+-				p++;
+-				s++;
+-			    }
++			    S9xBackAdd f = { back, (uint16) COLOR_ADD (back, GFX.FixedColour), GFX.Delta };
++			    S9xComposeBack (p, d, e, s, f);
+ 			}
+ 			else
+ 			{
+@@ -3563,29 +3738,8 @@
+ 				// copy the sub-screen to the main screen
+ 				// or fill it with the back-drop colour if the
+ 				// sub-screen is clear.
+-				register uint16 *p = (uint16 *) (GFX.Screen + y * GFX.Pitch2) + Left;
+-				register uint8 *d = GFX.ZBuffer + y * GFX.ZPitch;
+-				register uint8 *s = GFX.SubZBuffer + y * GFX.ZPitch + Left;
+-				register uint8 *e = d + Right;
+-				d += Left;
+-				while (d < e)
+-				{
+-				    if (*d == 0)
+-				    {
+-					if (*s)
+-					{
+-					    if (*s != 1)
+-						*p = *(p + GFX.Delta);
+-					    else	
+-						*p = GFX.FixedColour;
+-					}
+-					else
+-					    *p = (uint16) back;
+-				    }
+-				    d++;
+-				    p++;
+-				    s++;
+-				}
++				S9xBackCopy f = { back, (uint16) GFX.FixedColour, GFX.Delta };
++				S9xComposeBack (p, d, e, s, f);
+ 			    }
+ 			}
+ 		    }
+@@ -3610,13 +3764,8 @@
+ 			    uint8 *e = d + Right;
+ 			    d += Left;
+ 
+-			    while (d < e)
+-			    {
+-				if (*d == 0)
+-				    *p = (int16) back;
+-				d++;
+-				p++;
+-			    }
++			    S9xBackFill f = { (uint16) back };
++			    S9xComposeBack (p, d, e, d, f);
+ 			}
+ 		    }
+ 		}
+@@ -3628,16 +3777,12 @@
+ 			uint8 *d = GFX.ZBuffer + y * GFX.ZPitch;
+ 			uint8 *e = d + 256 * x2;
+ 
+-			while (d < e)
+-			{
+-			    if (*d == 0)
+-				*p = (int16) back;
+-			    d++;
+-			    p++;
+-			}
++			S9xBackFill f = { (uint16) back };
++			S9xComposeBack (p, d, e, d, f);
+ 		    }
+ 		}
+ 	    }
++	s9x_direct_done: ;
+ 	}
+ 	else
+ 	{
+@@ -3650,6 +3795,41 @@
+ 	    if (PPU.ForcedBlanking)
+ 		back = black;
+ 
++	    /* Seattle: as palette indices: the back colour is entry 0, black
++	       (forced blanking, outside the colour window) entry 16 */
++	    if (x2 == 1 && IPPU.RenderedScreenWidth == 256 &&
++		s9x_pal8_lines (PPU.ForcedBlanking || IPPU.Clip [0].Count [5], BLACK))
++	    {
++		static uint8 line8 [256] __attribute__ ((aligned (32)));
++		uint8 *scr = GFX.SubScreen;
++		uint8 backi = PPU.ForcedBlanking ? 16 : 0;
++		if (IPPU.Clip [0].Count [5])
++		{
++		    S9xFillLine (line8, 0x10101010, sizeof line8);
++		    for (uint32 c = 0; c < IPPU.Clip [0].Count [5]; c++)
++			for (uint32 x = IPPU.Clip [0].Left [c][5]; x < IPPU.Clip [0].Right [c][5]; x++)
++			    line8 [x] = backi;
++		}
++		for (uint32 y = starty; y <= endy; y++)
++		{
++		    if (IPPU.Clip [0].Count [5])
++			S9xCopyLine (scr + y * 256, line8, sizeof line8);
++		    else
++			S9xFillLine (scr + y * 256, backi * 0x01010101u, sizeof line8);
++		}
++		if (!PPU.ForcedBlanking)
++		{
++		    for (uint32 y = starty; y <= endy; y++)
++			S9xFillLine (GFX.ZBuffer + y * GFX.ZPitch, 0, 256);
++		    GFX.DB = GFX.ZBuffer;
++		    s9x_pal8_now = 1;
++		    RenderScreen (scr, FALSE, TRUE, SUB_SCREEN_DEPTH);
++		    s9x_pal8_now = 0;
++		    GFX.S = GFX.Screen;
++		}
++		p8_done = 1;
++	    }
++	    else
+ 	    if (IPPU.Clip [0].Count[5])
+ 	    {
+ 		for (uint32 y = starty; y <= endy; y++)
+@@ -3678,18 +3858,14 @@
+ 	    {
+ 		for (uint32 y = starty; y <= endy; y++)
+ 		{
+-		    uint32 *p = (uint32 *) (GFX.Screen + y * GFX.Pitch2);
+-		    uint32 *q = (uint32 *) ((uint16 *) p + IPPU.RenderedScreenWidth);
+-		    while (p < q)
+-			*p++ = back;
++		    S9xFillLine (GFX.Screen + y * GFX.Pitch2, back, IPPU.RenderedScreenWidth * sizeof (uint16));
+ 		}
+ 	    }
+-	    if (!PPU.ForcedBlanking)
++	    if (!p8_done && !PPU.ForcedBlanking)
+ 	    {
+ 		for (uint32 y = starty; y <= endy; y++)
+ 		{
+-		    ZeroMemory (GFX.ZBuffer + y * GFX.ZPitch,
+-				IPPU.RenderedScreenWidth);
++		    S9xFillLine (GFX.ZBuffer + y * GFX.ZPitch, 0, IPPU.RenderedScreenWidth);
+ 		}
+ 		GFX.DB = GFX.ZBuffer;
+ 		RenderScreen (GFX.Screen, FALSE, TRUE, SUB_SCREEN_DEPTH);
+@@ -3708,10 +3884,7 @@
+ 
+ 	    for (uint32 y = starty; y <= endy; y++)
+ 	    {
+-		uint32 *p = (uint32 *) (GFX.Screen + y * GFX.Pitch2);
+-		uint32 *q = (uint32 *) ((uint16 *) p + IPPU.RenderedScreenWidth);
+-		while (p < q)
+-		    *p++ = back;
++		S9xFillLine (GFX.Screen + y * GFX.Pitch2, back, IPPU.RenderedScreenWidth * sizeof (uint16));
+ 	    }
+ 	}
+ 	else
+@@ -3726,8 +3899,7 @@
+ 	{
+ 	    for (uint32 y = starty; y <= endy; y++)
+ 	    {
+-		ZeroMemory (GFX.ZBuffer + y * GFX.ZPitch,
+-			    IPPU.RenderedScreenWidth);
++		S9xFillLine (GFX.ZBuffer + y * GFX.ZPitch, 0, IPPU.RenderedScreenWidth);
+ 	    }
+ 	    GFX.DB = GFX.ZBuffer;
+ 	    GFX.pCurrentClip = &IPPU.Clip [0];
+@@ -3880,7 +4052,41 @@
+ 	    }
+ 	}
+     }
++    /* Seattle: lines drawn as RGB565: a frame begun as palette indices is
++       expanded up to these lines and continues as RGB565 */
++    if (!p8_done && GFX.StartY <= GFX.EndY)
++    {
++	if (s9x_pal8_frame == 1)
++	    s9x_pal8_expand (GFX.StartY);
++	s9x_pal8_frame = 2;
++    }
+     IPPU.PreviousLine = IPPU.CurrentLine;
++}
++
++/* Seattle: the lines PreviousLine to CurrentLine - 1 rendered in strips of
++   s9x_strip lines (0: in one pass), each strip ending on a multiple of
++   s9x_strip. Every drawing step of S9xUpdateScreenLines (clears, sub
++   screen, main screen, colour math) acts on each pixel from that pixel's
++   own line and from state that is constant within the call, so the
++   result is the one of a single pass; a strip of the main screen, sub
++   screen and both depth buffers stays in the data cache across the
++   passes. Not with hi-res support (lo-res lines widened at a mode
++   change). */
++void S9xUpdateScreen ()
++{
++    int cur = IPPU.CurrentLine;
++    if (s9x_strip > 0 && !Settings.SupportHiRes)
++    {
++	int last = cur - 1 < (int) PPU.ScreenHeight - 1 ? cur - 1 : (int) PPU.ScreenHeight - 1;
++	int next;
++	while ((next = (IPPU.PreviousLine / s9x_strip + 1) * s9x_strip) <= last)
++	{
++	    IPPU.CurrentLine = next;
++	    S9xUpdateScreenLines ();
++	}
++	IPPU.CurrentLine = cur;
++    }
++    S9xUpdateScreenLines ();
+ }
+ 
+ #ifdef GFX_MULTI_FORMAT
+diff -ru a/release/gfx.h b/release/gfx.h
+--- a/release/gfx.h	2026-11-10 09:32:52
++++ b/release/gfx.h	2026-11-10 09:32:52
+@@ -104,6 +104,8 @@
+ #define H_FLIP 0x4000
+ #define V_FLIP 0x8000
+ #define BLANK_TILE 2
++/* Seattle: ConvertTile result of a tile with no pixel of value 0 (tile.cpp) */
++#define S9X_OPAQUE_TILE 3
+ 
+ struct SBG
+ {
+@@ -174,17 +176,63 @@
+ 	  ((C2) & RGB_REMOVE_LOW_BITS_MASK)) >> 1) + \
+ 	((C1) & (C2) & RGB_LOW_BITS_MASK)]
+ #else
+-#define COLOR_ADD(C1, C2) \
++#define COLOR_ADD_CPU(C1, C2) \
+ (GFX.X2 [((((C1) & RGB_REMOVE_LOW_BITS_MASK) + \
+ 	  ((C2) & RGB_REMOVE_LOW_BITS_MASK)) >> 1) + \
+ 	 ((C1) & (C2) & RGB_LOW_BITS_MASK)] | \
+  (((C1) ^ (C2)) & RGB_LOW_BITS_MASK))	   
+ #endif
+ 
+-#define COLOR_ADD1_2(C1, C2) \
++#define COLOR_ADD1_2_CPU(C1, C2) \
+ (((((C1) & RGB_REMOVE_LOW_BITS_MASK) + \
+           ((C2) & RGB_REMOVE_LOW_BITS_MASK)) >> 1) + \
+          ((C1) & (C2) & RGB_LOW_BITS_MASK) | ALPHA_BITS_MASK)
++
++/* Seattle: with s9x_vmath set (RGB555 rendering, S9xUpdateScreen) an
++   added pixel keeps its own colour and gets bit 15; the platform blends
++   the sub screen into those pixels on the Voodoo (alpha blending) */
++extern "C" int s9x_vmath, s9x_vmath_used, s9x_vmath_half, s9x_vmath_enable;
++#define COLOR_ADD(C1, C2)    (s9x_vmath ? ((C1) | 0x8000) : COLOR_ADD_CPU (C1, C2))
++#define COLOR_ADD1_2(C1, C2) (s9x_vmath ? ((C1) | 0x8000) : COLOR_ADD1_2_CPU (C1, C2))
++
++/* Seattle: S9xUpdateScreen renders in strips of s9x_strip lines (gfx.cpp) */
++extern "C" int s9x_strip;
++/* Seattle: sub screen drawn into the main screen for backdrop-only addition
++   with back colour 0 (gfx.cpp S9xUpdateScreen) */
++extern "C" int s9x_direct;
++/* Seattle: DrawTile16 and DrawClippedTile16 in R5000 assembler (platform
++   layer, tile16.S), the tile renderers while s9x_tile_asm is set */
++extern "C" void s9x_tile16 (uint32 Tile, uint32 Offset, uint32 StartLine, uint32 LineCount);
++extern "C" void s9x_ctile16 (uint32 Tile, uint32 Offset, uint32 StartPixel, uint32 Width,
++			     uint32 StartLine, uint32 LineCount);
++extern "C" int s9x_tile_asm;
++/* Seattle: a frame of 8-bit palette indices (platform layer, tile8.S).
++   s9x_pal8: the setting. s9x_pal8_frame, for the frame being rendered:
++   0 no line drawn yet, 1 its lines are palette indices in GFX.SubScreen
++   (256 bytes a line) with the colours s9x_pal8_pal, 2 its lines are
++   RGB565 in GFX.Screen. s9x_pal8_now: the tile renderers selected write
++   palette indices. */
++extern "C" int s9x_pal8, s9x_pal8_frame, s9x_pal8_now;
++extern "C" uint16 s9x_pal8_pal [256];
++extern "C" void s9x_tile8 (uint32 Tile, uint32 Offset, uint32 StartLine, uint32 LineCount);
++extern "C" void s9x_ctile8 (uint32 Tile, uint32 Offset, uint32 StartPixel, uint32 Width,
++			    uint32 StartLine, uint32 LineCount);
++extern "C" void s9x_tilerun8 (const uint16 *t, uint32 n, uint32 Offset, uint32 VirtAlign,
++			      uint32 Lines, uint32 z);
++#define S9X_DRAWTILE16 (s9x_pal8_now ? s9x_tile8 : s9x_tile_asm ? s9x_tile16 : DrawTile16)
++#define S9X_DRAWCTILE16 (s9x_pal8_now ? s9x_ctile8 : s9x_tile_asm ? s9x_ctile16 : DrawClippedTile16)
++/* Seattle: n unclipped 8 x 8 tiles of one background row (tile16.S), the
++   middle loop of DrawBackground; z: the depth without the priority bit in
++   bits 7-0, with it in bits 15-8 */
++extern "C" void s9x_tilerun16 (const uint16 *t, uint32 n, uint32 Offset, uint32 VirtAlign,
++			       uint32 Lines, uint32 z);
++
++/* Seattle: n bytes at p set to the 32-bit pattern (platform layer; p and n
++   multiples of 4) */
++extern "C" void S9xFillLine (void *p, uint32 pattern, uint32 n);
++/* Seattle: n bytes copied from s to p (platform layer; p, s and n
++   multiples of 4) */
++extern "C" void S9xCopyLine (void *p, const void *s, uint32 n);
+ 
+ #if defined(OLD_COLOUR_BLENDING)
+ #define COLOR_SUB(C1, C2) \
+diff -ru a/release/memmap.cpp b/release/memmap.cpp
+--- a/release/memmap.cpp	2026-11-10 09:32:52
++++ b/release/memmap.cpp	2026-11-10 09:32:52
+@@ -195,7 +195,13 @@
+     // unallocated memory (can cause crash on some ports).
+     ROM += 0x8000;
+ 
++#if S9X_MAX_ROM_SIZE < 0x412000
++    // ROM buffer below 0x412000 bytes: the C4 RAM sits below the 64 KB
++    // SA-1 and S-DD1 scratch area at the top of the buffer.
++    C4RAM    = ROM + MAX_ROM_SIZE - 0x10000 - 8192;
++#else
+     C4RAM    = ROM + 0x400000 + 8192 * 8;
++#endif
+     ::ROM    = ROM;
+     ::SRAM   = SRAM;
+     ::RegRAM = FillRAM;
+diff -ru a/release/memmap.h b/release/memmap.h
+--- a/release/memmap.h	2026-11-10 09:32:52
++++ b/release/memmap.h	2026-11-10 09:32:52
+@@ -120,7 +120,10 @@
+ 	MAP_NONE, MAP_DEBUG, MAP_C4, MAP_BWRAM, MAP_BWRAM_BITMAP,
+ 	MAP_BWRAM_BITMAP2, MAP_SA1RAM, MAP_LAST
+     };
+-    enum { MAX_ROM_SIZE = 0x600000 };
++#ifndef S9X_MAX_ROM_SIZE
++#define S9X_MAX_ROM_SIZE 0x600000
++#endif
++    enum { MAX_ROM_SIZE = S9X_MAX_ROM_SIZE };
+     
+     uint8 *RAM;
+     uint8 *ROM;
+diff -ru a/release/soundux.cpp b/release/soundux.cpp
+--- a/release/soundux.cpp	2026-11-10 09:32:52
++++ b/release/soundux.cpp	2026-11-10 09:32:52
+@@ -849,6 +849,15 @@
+ 	VL = (ch->sample * ch-> left_vol_level) / 128;
+ 	VR = (ch->sample * ch->right_vol_level) / 128;
+ 
++	/* envelope error, its rate and the sample counter in registers;
++	   written to the channel before the envelope and sample steps and
++	   at the end, read back after the steps */
++	const int rs = Settings.ReverseStereo;
++	int *const eb = ch->echo_buf_ptr;
++	const bool8 wmod = (pitch_mod & (1 << (J + 1))) != 0;
++	unsigned long env_error = ch->env_error, erate = ch->erate;
++	uint32 count = ch->count;
++
+ 	for (uint32 I = 0; I < (uint32) sample_count; I += 2)
+ 	{
+ 	    unsigned long freq = freq0;
+@@ -856,9 +865,11 @@
+ 	    if (mod)
+ 		freq = PITCH_MOD(freq, wave [I / 2]);
+ 
+-	    ch->env_error += ch->erate;
+-	    if (ch->env_error >= FIXED_POINT) 
++	    env_error += erate;
++	    if (env_error >= FIXED_POINT) 
+ 	    {
++		ch->env_error = env_error;
++		ch->count = count;
+ 		uint32 step = ch->env_error >> FIXED_POINT_SHIFT;
+ 
+ 		switch (ch->state)
+@@ -1007,11 +1018,16 @@
+ 		ch->right_vol_level = (ch->envx * ch->volume_right) / 128;
+ 		VL = (ch->sample * ch-> left_vol_level) / 128;
+ 		VR = (ch->sample * ch->right_vol_level) / 128;
++		env_error = ch->env_error;
++		erate = ch->erate;
++		count = ch->count;
+ 	    }
+ 
+-	    ch->count += freq;
+-	    if (ch->count >= FIXED_POINT)
++	    count += freq;
++	    if (count >= FIXED_POINT)
+ 	    {
++		ch->env_error = env_error;
++		ch->count = count;
+ 		VL = ch->count >> FIXED_POINT_SHIFT;
+ 		ch->sample_pointer += VL;
+ 		ch->count &= FIXED_POINT_REMAINDER;
+@@ -1074,6 +1090,9 @@
+ 
+ 		VL = (ch->sample * ch-> left_vol_level) / 128;
+ 		VR = (ch->sample * ch->right_vol_level) / 128;
++		env_error = ch->env_error;
++		erate = ch->erate;
++		count = ch->count;
+             }
+ 	    else
+ 	    {
+@@ -1088,14 +1107,16 @@
+ 		}
+ 	    }
+ 
+-	    if (pitch_mod & (1 << (J + 1)))
++	    if (wmod)
+ 		wave [I / 2] = ch->sample * ch->envx;
+ 
+-	    MixBuffer [I      ^ Settings.ReverseStereo] += VL;
+-	    MixBuffer [I + (1 ^ Settings.ReverseStereo)] += VR;
+-	    ch->echo_buf_ptr [I      ^ Settings.ReverseStereo] += VL;
+-	    ch->echo_buf_ptr [I + (1 ^ Settings.ReverseStereo)] += VR;
++	    MixBuffer [I      ^ rs] += VL;
++	    MixBuffer [I + (1 ^ rs)] += VR;
++	    eb [I      ^ rs] += VL;
++	    eb [I + (1 ^ rs)] += VR;
+         }
++	ch->env_error = env_error;
++	ch->count = count;
+ stereo_exit: ;
+     }
+ }
+diff -ru a/release/tile.cpp b/release/tile.cpp
+--- a/release/tile.cpp	2026-11-10 09:32:52
++++ b/release/tile.cpp	2026-11-10 09:32:52
+@@ -58,6 +58,7 @@
+     register uint8 *tp = &Memory.VRAM[TileAddr];
+     uint32 *p = (uint32 *) pCache;
+     uint32 non_zero = 0;
++    uint32 has_zero = 0;	/* Seattle: a byte 0 in some word (S9X_OPAQUE_TILE) */
+     uint8 line;
+ 
+     switch (BG.BitShift)
+@@ -112,6 +113,7 @@
+ 	    *p++ = p1;
+ 	    *p++ = p2;
+ 	    non_zero |= p1 | p2;
++	    has_zero |= ((p1 - 0x01010101u) & ~p1) | ((p2 - 0x01010101u) & ~p2);
+ 	}
+ 	break;
+ 
+@@ -144,6 +146,7 @@
+ 	    *p++ = p1;
+ 	    *p++ = p2;
+ 	    non_zero |= p1 | p2;
++	    has_zero |= ((p1 - 0x01010101u) & ~p1) | ((p2 - 0x01010101u) & ~p2);
+ 	}
+ 	break;
+ 
+@@ -166,10 +169,13 @@
+ 	    *p++ = p1;
+ 	    *p++ = p2;
+ 	    non_zero |= p1 | p2;
++	    has_zero |= ((p1 - 0x01010101u) & ~p1) | ((p2 - 0x01010101u) & ~p2);
+ 	}
+ 	break;
+     }
+-    return (non_zero ? TRUE : BLANK_TILE);
++    if (!non_zero)
++	return BLANK_TILE;
++    return (has_zero & 0x80808080u) ? TRUE : S9X_OPAQUE_TILE;
+ }
+ 
+ inline void WRITE_4PIXELS (uint32 Offset, uint8 *Pixels)
+@@ -497,13 +503,101 @@
+ #undef FN
+ }
+ 
++/* Seattle: DrawTile16 and DrawClippedTile16 with the results of
++   WRITE_4PIXELS16 and WRITE_4PIXELS16_FLIPPED. The colour table, Z1 and Z2
++   are held in registers (the byte stores to the depth buffer otherwise
++   reload them from GFX for every pixel), and the four depth bytes of a
++   group are compared with Z1 in one word: depth values are below 128
++   (at most MAIN_SCREEN_DEPTH + 17), so byte k of
++   ((Z1 - 1) x 0x01010101 | 0x80808080) - depth has bit 7 set exactly
++   when depth byte k is below Z1, without a borrow between bytes. A group
++   with no byte below Z1 is skipped; a group with every byte below Z1 and
++   four non-zero pixels is written without further tests. The pixel of
++   column k is byte k of the cache word (SH0..SH3 = 0, 8, 16, 24), or byte
++   3 - k for a horizontally flipped tile (24, 16, 8, 0), as Pixels [N] and
++   Pixels [3 - N] of the WRITE functions on a little-endian host. */
++typedef struct { uint32 v; } __attribute__ ((packed)) S9xU32U;
++#define HAS_ZERO_BYTE(w) (((w) - 0x01010101u) & ~(w) & 0x80808080u)
++
++#define T16_PIXEL(s, d, w, K, SH) \
++    if ((lt & (0x80u << (8 * K))) && (p = ((w) >> (SH)) & 0xff)) \
++    { \
++	s [K] = c [p]; \
++	d [K] = (uint8) z2; \
++    }
++
++#define T16_GROUP(s, d, w, SH0, SH1, SH2, SH3) \
++    { \
++	uint32 lt = (zm - ((S9xU32U *) (d))->v) & 0x80808080u; \
++	if (lt) \
++	{ \
++	    if (lt == 0x80808080u && !HAS_ZERO_BYTE (w)) \
++	    { \
++		s [0] = c [((w) >> (SH0)) & 0xff]; \
++		s [1] = c [((w) >> (SH1)) & 0xff]; \
++		s [2] = c [((w) >> (SH2)) & 0xff]; \
++		s [3] = c [((w) >> (SH3)) & 0xff]; \
++		((S9xU32U *) (d))->v = z2x4; \
++	    } \
++	    else \
++	    { \
++		uint32 p; \
++		T16_PIXEL (s, d, w, 0, SH0) \
++		T16_PIXEL (s, d, w, 1, SH1) \
++		T16_PIXEL (s, d, w, 2, SH2) \
++		T16_PIXEL (s, d, w, 3, SH3) \
++	    } \
++	} \
++    }
++
++#define T16_LOCALS \
++    const uint16 *c = GFX.ScreenColors; \
++    uint32 z2 = GFX.Z2; \
++    uint32 zm = ((uint32) (GFX.Z1 - 1) * 0x01010101u) | 0x80808080u; \
++    uint32 z2x4 = z2 * 0x01010101u; \
++    uint32 ppl = GFX.PPL; \
++    uint16 *s = (uint16 *) GFX.S + Offset; \
++    uint8 *d = GFX.DB + Offset; \
++    int step = 8; \
++    if (Tile & V_FLIP) \
++    { \
++	bp = pCache + 56 - StartLine; \
++	step = -8; \
++    } \
++    else \
++	bp = pCache + StartLine;
++
+ void DrawTile16 (uint32 Tile, uint32 Offset, uint32 StartLine,
+ 	         uint32 LineCount)
+ {
+     TILE_PREAMBLE
+     register uint8 *bp;
++    T16_LOCALS
+ 
+-    RENDER_TILE(WRITE_4PIXELS16, WRITE_4PIXELS16_FLIPPED, 4)
++    if (!(Tile & H_FLIP))
++    {
++	for (l = LineCount; l != 0; l--, bp += step, s += ppl, d += ppl)
++	{
++	    uint32 w0 = *(uint32 *) bp;
++	    uint32 w1 = *(uint32 *) (bp + 4);
++	    if (w0)
++		T16_GROUP (s, d, w0, 0, 8, 16, 24)
++	    if (w1)
++		T16_GROUP ((s + 4), (d + 4), w1, 0, 8, 16, 24)
++	}
++    }
++    else
++    {
++	for (l = LineCount; l != 0; l--, bp += step, s += ppl, d += ppl)
++	{
++	    uint32 w0 = *(uint32 *) (bp + 4);
++	    uint32 w1 = *(uint32 *) bp;
++	    if (w0)
++		T16_GROUP (s, d, w0, 24, 16, 8, 0)
++	    if (w1)
++		T16_GROUP ((s + 4), (d + 4), w1, 24, 16, 8, 0)
++	}
++    }
+ }
+ 
+ void DrawClippedTile16 (uint32 Tile, uint32 Offset,
+@@ -514,7 +608,34 @@
+     register uint8 *bp;
+ 
+     TILE_CLIP_PREAMBLE
+-    RENDER_CLIPPED_TILE(WRITE_4PIXELS16, WRITE_4PIXELS16_FLIPPED, 4)
++    T16_LOCALS
++
++    if (!(Tile & H_FLIP))
++    {
++	for (l = LineCount; l != 0; l--, bp += step, s += ppl, d += ppl)
++	{
++	    uint32 w0 = *(uint32 *) bp & d1;
++	    uint32 w1 = *(uint32 *) (bp + 4) & d2;
++	    if (w0)
++		T16_GROUP (s, d, w0, 0, 8, 16, 24)
++	    if (w1)
++		T16_GROUP ((s + 4), (d + 4), w1, 0, 8, 16, 24)
++	}
++    }
++    else
++    {
++	SWAP_DWORD (d1);
++	SWAP_DWORD (d2);
++	for (l = LineCount; l != 0; l--, bp += step, s += ppl, d += ppl)
++	{
++	    uint32 w0 = *(uint32 *) (bp + 4) & d1;
++	    uint32 w1 = *(uint32 *) bp & d2;
++	    if (w0)
++		T16_GROUP (s, d, w0, 24, 16, 8, 0)
++	    if (w1)
++		T16_GROUP ((s + 4), (d + 4), w1, 24, 16, 8, 0)
++	}
++    }
+ }
+ 
+ void DrawTile16x2 (uint32 Tile, uint32 Offset, uint32 StartLine,
