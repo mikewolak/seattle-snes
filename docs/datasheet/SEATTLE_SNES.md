@@ -116,7 +116,7 @@ A-21464 board, boot ROM `seattle_monitor23_27C4001.bin`, release disk build, Sup
 | License | Snes9x license: use, copy, modify and distribute for non-commercial purposes |
 | Core changes | `patches/snes9x-1.39-seattle.patch`: applied to the unpacked archive it reproduces the build tree |
 | Platform layer | `snes/`: `s9x_seattle.c`, `s9x_cpu.cpp`, `s9x_offs.cpp`, `s9x_port.h`, `menu.c`, and the assembler files of the next section |
-| Host tree | bring-up monitor of the Blitz99 project, repository seattle-quake2, branch `bringup-rom`, commit `de321c5` |
+| Host tree | bring-up monitor of the Blitz99 project, repository seattle-quake2, branch `bringup-rom`, commit `85674bd` |
 | Palette download | register sequence of `_grTexDownloadPalette`, Glide 2.x, 3Dfx Interactive |
 | File system | FatFs R0.16, ChaN |
 
@@ -402,7 +402,7 @@ Every shown frame of the release build is a frame of palette indices (598 of 598
 ## Build and Installation
 
 1. Unpack `s9xs139.zip` into `$HOME/snes9x-1.39` and apply `patches/snes9x-1.39-seattle.patch` with `patch -p1`.
-2. Place `snes/` as `bringup/snes/` in the bring-up tree of repository seattle-quake2 at commit `de321c5` or later; a tree without the SNES block takes `patches/bringup-snes-integration.patch`.
+2. Place `snes/` as `bringup/snes/` in the bring-up tree of repository seattle-quake2 at commit `85674bd` or later; a tree without the SNES block takes `patches/bringup-snes-integration.patch`.
 3. Build the disk build: `make -C bringup FATFS=1 BUILD=build-fs EXTRA="-DUART_DIV=0x00u" build-fs/payload.bin`. Toolchain: `mipsel-none-elf` GCC 12.2.0 with newlib.
 4. Write the payload with its header sector to the card at LBA 0x3EE080 (monitor command `dsave`, or the remote protocol's `disk write`).
 5. Copy game images (`.smc`, `.sfc`, `.swc`, `.fig`) to `/snes` on the exFAT volume of the card.
@@ -436,6 +436,6 @@ The complete list is in `docs/SNES.md` section 6.
 | Frame of palette indices in BG mode 0, with 16 x 16 tiles, with color windows | untested |
 | BG modes 2 to 7, mosaic, color math on a layer | drawn as RGB565 by the C renderer; speed not measured |
 | P8 texture with the bilinear filter, texture by CPU block writes | untested |
-| Memory | 19&nbsp;KB of the arena free at game start with a 2.4&nbsp;MB image buffer; a second game start without a reset failed once to allocate, cause not established |
+| Memory | 19&nbsp;KB of the arena free at game start with a 2.4&nbsp;MB image buffer; repeated game starts in one boot verified in MAME (four starts), untested on the board |
 | Compiler options | `-O3` for the core enlarges the image by 123&nbsp;KB and the graphics tables no longer fit the arena |
 | Screen capture on the board | not available in the program; Figure 1 is a MAME snapshot |

@@ -443,7 +443,9 @@ Every shown frame of the `pal8 on` runs is a frame of palette indices (`p8 598/5
 |---|---|
 | `frameskip 1`, `sound off`, `check 60`, `fcrc 60`, 40 s, release build with `pal8 on` against the MAME run of `tile c` with `pal8 off` (section 10.6) | 38 `fcrc` lines (1,140 rendered frames) and 38 `check` lines equal, last `fcrc 2280 n 1140 crc 2f320595` |
 | Picture and sound, owner at the cabinet, 512x240 | Super Mario World attract demo and play: correct |
-| Untested on the board | `tile c` and `pal8 off` timing of this tree, `vcrc`, `scrc`, a second `snes` run without a reset between (the first attempt reported "core memory allocation failed"), games other than Super Mario World |
+| Second game start without a reset (board, build CRC32 6f5d6ab9; MAME, game list after `seconds 12`) | "core memory allocation failed": each run reserved 256 KB of the C library heap anew; the second reservation lay above blocks still held from the first run or was returned through `sbrk` and taken by the arena |
+| The same after the change of `arena_open` (reserve taken once per boot, heap trimming off; build 1,359,876 bytes, CRC32 82808d61), MAME, four starts in one boot | every start: 4,808 KB of the arena used, 19 KB free; 38 `fcrc` and 38 `check` lines equal to the reference. Board: untested; the card holds the build with CRC32 6f5d6ab9 |
+| Untested on the board | `tile c` and `pal8 off` timing of this tree, `vcrc`, `scrc`, games other than Super Mario World |
 
 ## 11 Texture DMA and Mixer
 

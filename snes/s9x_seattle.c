@@ -92,6 +92,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <malloc.h>
 #include <unistd.h>
 
 #include "s9x_port.h"
@@ -253,18 +254,26 @@ static void *pin;
 
 static int arena_open(void)
 {
-    void *keep = malloc(RESERVE);
-    pin = malloc(16);                    /* keeps the reserve below the top: not trimmed when freed */
-    if (!keep || !pin) {
-        free(keep); free(pin); pin = 0;
-        return -1;
+    /* Once per boot: RESERVE bytes of the C library heap for the small
+     * blocks, obtained as one block and freed again. The pin block above
+     * it and the trim threshold keep the C library from returning that
+     * memory through sbrk, so it stays in the library's free lists for
+     * every later run and the arena starts at the same address each time.
+     * A second reservation in a later run would lie above the blocks
+     * still held from the first and shorten the arena. */
+    if (!pin) {
+        mallopt(M_TRIM_THRESHOLD, 0x7fffffff);
+        void *keep = malloc(RESERVE);
+        pin = malloc(16);
+        if (!keep || !pin) {
+            free(keep); free(pin); pin = 0;
+            return -1;
+        }
+        free(keep);
     }
-    free(keep);
     brk0 = sbrk(0);
-    if (sbrk((int)(HEAP_LIMIT - (uint32_t)brk0)) == (void *)-1) {
-        free(pin); pin = 0;
+    if (sbrk((int)(HEAP_LIMIT - (uint32_t)brk0)) == (void *)-1)
         return -1;
-    }
     arena_lo = arena_ptr = (uint8_t *)(((uint32_t)brk0 + 31u) & ~31u);
     return 0;
 }
@@ -274,8 +283,6 @@ static void arena_close(void)
     if (!arena_lo)
         return;
     sbrk(-(int)(HEAP_LIMIT - (uint32_t)brk0));
-    free(pin);
-    pin = 0;
     arena_lo = arena_ptr = 0;
 }
 

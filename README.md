@@ -36,7 +36,7 @@ The core in C renders 10 frames a second on the 150 MHz R5000, which has 32 KB p
 | Untouched upstream copy | not in this repository; the archive above |
 | Core changes | `patches/snes9x-1.39-seattle.patch`; applied to the unpacked archive it reproduces the build tree |
 | Platform layer and assembler | `snes/`, by Mike Wolak, EPROM Foundry Inc., project Blitz99; the opcode semantics of `cpu65.S` and `spc700.S` are those of the Snes9x 1.39 sources (work derived from Snes9x, Snes9x license) |
-| Host tree | bring-up monitor, repository seattle-quake2, branch `bringup-rom`, commit `de321c5`; `snes/` is its `bringup/snes/` |
+| Host tree | bring-up monitor, repository seattle-quake2, branch `bringup-rom`, commit `85674bd`; `snes/` is its `bringup/snes/` |
 | Palette download | register sequence of `_grTexDownloadPalette`, Glide 2.x, 3Dfx Interactive |
 | File system | FatFs R0.16, ChaN (in the host tree) |
 | Change record | `docs/SNES.md` sections 3, 9, 10 and 11 |
@@ -93,13 +93,13 @@ A group of four pixels written whole costs 28 instructions in `tile16.S` (four t
 ## 6 Build and Installation
 
 1. Unpack `s9xs139.zip` into `$HOME/snes9x-1.39` and apply `patches/snes9x-1.39-seattle.patch` with `patch -p1`.
-2. Place `snes/` as `bringup/snes/` in the bring-up tree of repository seattle-quake2 at commit `de321c5` or later. A tree without the SNES block takes `patches/bringup-snes-integration.patch`.
+2. Place `snes/` as `bringup/snes/` in the bring-up tree of repository seattle-quake2 at commit `85674bd` or later. A tree without the SNES block takes `patches/bringup-snes-integration.patch`.
 3. Build the disk build: `make -C bringup FATFS=1 BUILD=build-fs EXTRA="-DUART_DIV=0x00u" build-fs/payload.bin`. Toolchain: `mipsel-none-elf` GCC 12.2.0 with newlib.
 4. Write the payload with its header sector to the card at LBA 0x3EE080 (monitor command `dsave`, or `disk write` of the remote protocol client).
 5. Copy game images (`.smc`, `.sfc`, `.swc`, `.fig`) to `/snes` on the exFAT volume of the card.
 6. Start the program from the launch menu of the boot ROM: Other Apps, SNES.
 
-Release build of this revision: payload 1,358,916 bytes, CRC32 6f5d6ab9; card image with header 1,359,872 bytes, CRC32 823a2781.
+Build measured on the board: payload 1,358,916 bytes, CRC32 6f5d6ab9; card image with header 1,359,872 bytes, CRC32 823a2781. Build of this revision (with the change for repeated game starts): 1,359,876 bytes, CRC32 82808d61, untested on the board.
 
 ## 7 Verification
 
@@ -120,5 +120,5 @@ Release build of this revision: payload 1,358,916 bytes, CRC32 6f5d6ab9; card im
 | Super FX, SA-1, DSP-1, C4, S-DD1, HiROM images, PAL timing | untested |
 | Frame of palette indices in BG mode 0, with 16 x 16 tiles, with color windows | untested |
 | BG modes 2 to 7, mosaic, color math on a layer | drawn as RGB565 by the C renderer; speed not measured |
-| Memory | 19 KB of the arena free at game start; a second game start without a reset failed once to allocate, cause not established |
+| Memory | 19 KB of the arena free at game start; repeated game starts in one boot verified in MAME (four starts), untested on the board |
 | Build outside the host tree | not provided: the platform layer uses the Voodoo, interrupt, sound, file-system and monitor code of the bring-up tree |

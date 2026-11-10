@@ -215,7 +215,7 @@ JAMMA controls   ---&gt; |        v                                             
 <tr><td>License</td><td>Snes9x license: use, copy, modify and distribute for non-commercial purposes</td></tr>
 <tr><td>Core changes</td><td><span class="mono">patches/snes9x-1.39-seattle.patch</span>: applied to the unpacked archive it reproduces the build tree</td></tr>
 <tr><td>Platform layer</td><td><span class="mono">snes/</span>: <span class="mono">s9x_seattle.c</span>, <span class="mono">s9x_cpu.cpp</span>, <span class="mono">s9x_offs.cpp</span>, <span class="mono">s9x_port.h</span>, <span class="mono">menu.c</span>, and the assembler files of the next section</td></tr>
-<tr><td>Host tree</td><td>bring-up monitor of the Blitz99 project, repository seattle-quake2, branch <span class="mono">bringup-rom</span>, commit <span class="mono">de321c5</span></td></tr>
+<tr><td>Host tree</td><td>bring-up monitor of the Blitz99 project, repository seattle-quake2, branch <span class="mono">bringup-rom</span>, commit <span class="mono">85674bd</span></td></tr>
 <tr><td>Palette download</td><td>register sequence of <span class="mono">_grTexDownloadPalette</span>, Glide 2.x, 3Dfx Interactive</td></tr>
 <tr><td>File system</td><td>FatFs R0.16, ChaN</td></tr>
 </tbody></table></div>
@@ -478,7 +478,7 @@ group_m:
 </section>
 <section>
 <div class="sh"><span class="no">16</span>Build and Installation</div>
-<ol style="margin:.2em 0 .9em;padding-left:22px"><li>Unpack <span class="mono">s9xs139.zip</span> into <span class="mono">$HOME/snes9x-1.39</span> and apply <span class="mono">patches/snes9x-1.39-seattle.patch</span> with <span class="mono">patch -p1</span>.</li><li>Place <span class="mono">snes/</span> as <span class="mono">bringup/snes/</span> in the bring-up tree of repository seattle-quake2 at commit <span class="mono">de321c5</span> or later; a tree without the SNES block takes <span class="mono">patches/bringup-snes-integration.patch</span>.</li><li>Build the disk build: <span class="mono">make -C bringup FATFS=1 BUILD=build-fs EXTRA=&quot;-DUART_DIV=0x00u&quot; build-fs/payload.bin</span>. Toolchain: <span class="mono">mipsel-none-elf</span> GCC 12.2.0 with newlib.</li><li>Write the payload with its header sector to the card at LBA 0x3EE080 (monitor command <span class="mono">dsave</span>, or the remote protocol's <span class="mono">disk write</span>).</li><li>Copy game images (<span class="mono">.smc</span>, <span class="mono">.sfc</span>, <span class="mono">.swc</span>, <span class="mono">.fig</span>) to <span class="mono">/snes</span> on the exFAT volume of the card.</li><li>Start the program from the launch menu of the boot ROM: Other Apps, SNES.</li></ol>
+<ol style="margin:.2em 0 .9em;padding-left:22px"><li>Unpack <span class="mono">s9xs139.zip</span> into <span class="mono">$HOME/snes9x-1.39</span> and apply <span class="mono">patches/snes9x-1.39-seattle.patch</span> with <span class="mono">patch -p1</span>.</li><li>Place <span class="mono">snes/</span> as <span class="mono">bringup/snes/</span> in the bring-up tree of repository seattle-quake2 at commit <span class="mono">85674bd</span> or later; a tree without the SNES block takes <span class="mono">patches/bringup-snes-integration.patch</span>.</li><li>Build the disk build: <span class="mono">make -C bringup FATFS=1 BUILD=build-fs EXTRA=&quot;-DUART_DIV=0x00u&quot; build-fs/payload.bin</span>. Toolchain: <span class="mono">mipsel-none-elf</span> GCC 12.2.0 with newlib.</li><li>Write the payload with its header sector to the card at LBA 0x3EE080 (monitor command <span class="mono">dsave</span>, or the remote protocol's <span class="mono">disk write</span>).</li><li>Copy game images (<span class="mono">.smc</span>, <span class="mono">.sfc</span>, <span class="mono">.swc</span>, <span class="mono">.fig</span>) to <span class="mono">/snes</span> on the exFAT volume of the card.</li><li>Start the program from the launch menu of the boot ROM: Other Apps, SNES.</li></ol>
 </section>
 <section>
 <div class="sh"><span class="no">17</span>Settings</div>
@@ -507,7 +507,7 @@ group_m:
 <tr><td>Frame of palette indices in BG mode 0, with 16 x 16 tiles, with color windows</td><td>untested</td></tr>
 <tr><td>BG modes 2 to 7, mosaic, color math on a layer</td><td>drawn as RGB565 by the C renderer; speed not measured</td></tr>
 <tr><td>P8 texture with the bilinear filter, texture by CPU block writes</td><td>untested</td></tr>
-<tr><td>Memory</td><td>19&nbsp;KB of the arena free at game start with a 2.4&nbsp;MB image buffer; a second game start without a reset failed once to allocate, cause not established</td></tr>
+<tr><td>Memory</td><td>19&nbsp;KB of the arena free at game start with a 2.4&nbsp;MB image buffer; repeated game starts in one boot verified in MAME (four starts), untested on the board</td></tr>
 <tr><td>Compiler options</td><td><span class="mono">-O3</span> for the core enlarges the image by 123&nbsp;KB and the graphics tables no longer fit the arena</td></tr>
 <tr><td>Screen capture on the board</td><td>not available in the program; Figure 1 is a MAME snapshot</td></tr>
 </tbody></table></div>
