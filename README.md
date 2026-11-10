@@ -36,7 +36,7 @@ The core in C renders 10 frames a second on the 150 MHz R5000, which has 32 KB p
 | Untouched upstream copy | not in this repository; the archive above |
 | Core changes | `patches/snes9x-1.39-seattle.patch`; applied to the unpacked archive it reproduces the build tree |
 | Platform layer and assembler | `snes/`, by Mike Wolak, EPROM Foundry Inc., project Blitz99; the opcode semantics of `cpu65.S` and `spc700.S` are those of the Snes9x 1.39 sources (work derived from Snes9x, Snes9x licence) |
-| Host tree | bring-up monitor, repository seattle-quake2, branch `bringup-rom`, commit `d3f8657`; `snes/` is its `bringup/snes/` |
+| Host tree | bring-up monitor, repository seattle-quake2, branch `bringup-rom`, commit `de321c5`; `snes/` is its `bringup/snes/` |
 | Palette download | register sequence of `_grTexDownloadPalette`, Glide 2.x, 3Dfx Interactive |
 | File system | FatFs R0.16, ChaN (in the host tree) |
 | Change record | `docs/SNES.md` sections 3, 9, 10 and 11 |
@@ -93,7 +93,7 @@ A group of four pixels written whole costs 28 instructions in `tile16.S` (four t
 ## 6 Build and Installation
 
 1. Unpack `s9xs139.zip` into `$HOME/snes9x-1.39` and apply `patches/snes9x-1.39-seattle.patch` with `patch -p1`.
-2. Place `snes/` as `bringup/snes/` in the bring-up tree of repository seattle-quake2 at commit `d3f8657` or later. A tree without the SNES block takes `patches/bringup-snes-integration.patch`.
+2. Place `snes/` as `bringup/snes/` in the bring-up tree of repository seattle-quake2 at commit `de321c5` or later. A tree without the SNES block takes `patches/bringup-snes-integration.patch`.
 3. Build the disk build: `make -C bringup FATFS=1 BUILD=build-fs EXTRA="-DUART_DIV=0x00u" build-fs/payload.bin`. Toolchain: `mipsel-none-elf` GCC 12.2.0 with newlib.
 4. Write the payload with its header sector to the card at LBA 0x3EE080 (monitor command `dsave`, or `disk write` of the remote protocol client).
 5. Copy game images (`.smc`, `.sfc`, `.swc`, `.fig`) to `/snes` on the exFAT volume of the card.

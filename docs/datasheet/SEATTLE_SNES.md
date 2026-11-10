@@ -116,7 +116,7 @@ A-21464 board, boot ROM `seattle_monitor23_27C4001.bin`, release disk build, Sup
 | Licence | Snes9x licence: use, copy, modify and distribute for non-commercial purposes |
 | Core changes | `patches/snes9x-1.39-seattle.patch`: applied to the unpacked archive it reproduces the build tree |
 | Platform layer | `snes/`: `s9x_seattle.c`, `s9x_cpu.cpp`, `s9x_offs.cpp`, `s9x_port.h`, `menu.c`, and the assembler files of the next section |
-| Host tree | bring-up monitor of the Blitz99 project, repository seattle-quake2, branch `bringup-rom`, commit `d3f8657` |
+| Host tree | bring-up monitor of the Blitz99 project, repository seattle-quake2, branch `bringup-rom`, commit `de321c5` |
 | Palette download | register sequence of `_grTexDownloadPalette`, Glide 2.x, 3Dfx Interactive |
 | File system | FatFs R0.16, ChaN |
 
@@ -402,7 +402,7 @@ Every shown frame of the release build is a frame of palette indices (598 of 598
 ## Build and Installation
 
 1. Unpack `s9xs139.zip` into `$HOME/snes9x-1.39` and apply `patches/snes9x-1.39-seattle.patch` with `patch -p1`.
-2. Place `snes/` as `bringup/snes/` in the bring-up tree of repository seattle-quake2 at commit `d3f8657` or later; a tree without the SNES block takes `patches/bringup-snes-integration.patch`.
+2. Place `snes/` as `bringup/snes/` in the bring-up tree of repository seattle-quake2 at commit `de321c5` or later; a tree without the SNES block takes `patches/bringup-snes-integration.patch`.
 3. Build the disk build: `make -C bringup FATFS=1 BUILD=build-fs EXTRA="-DUART_DIV=0x00u" build-fs/payload.bin`. Toolchain: `mipsel-none-elf` GCC 12.2.0 with newlib.
 4. Write the payload with its header sector to the card at LBA 0x3EE080 (monitor command `dsave`, or the remote protocol's `disk write`).
 5. Copy game images (`.smc`, `.sfc`, `.swc`, `.fig`) to `/snes` on the exFAT volume of the card.
