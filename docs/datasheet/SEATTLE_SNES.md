@@ -92,9 +92,7 @@ A-21464 board, boot ROM `seattle_monitor23_27C4001.bin`, release disk build, Sup
 | Arena free at game start | image buffer 0x260000 bytes | 19 | 23 | KB |
 | Disk build size | payload | 1,358,916 | 1,358,916 | bytes |
 
-{{img ../img/fig1_attract_a.png Super Mario World title sequence, frame of 8-bit palette indices displayed through the TMU palette. MAME 0.289 driver blitz99, snapshot of the emulated Voodoo output, 512 x 240, release disk build.}}
-
-{{img ../img/fig2_attract_b.png The same run 20 s later. MAME 0.289 driver blitz99, 512 x 240. The picture on the board was confirmed correct by the owner at the cabinet; the program has no screen capture path on the board.}}
+{{img ../img/fig1_super_mario_world.png Super Mario World (USA), attract demo: sprites and score digits over three background layers, frame of 8-bit palette indices displayed through the TMU palette. MAME 0.289 driver blitz99, snapshot of the emulated Voodoo output in the 512 x 240 mode, shown at the 4:3 proportion of the monitor. The program has no screen capture path on the board; the picture on the board was confirmed correct by the owner at the cabinet.}}
 
 ## Features
 
@@ -371,8 +369,6 @@ A group written whole costs 11 instructions against 28. For a tile with pixels o
 | Frame pacing | the program waits for the previous swap before it starts the next transfer, so it runs in step with the retrace. With automatic frame skip a frame is skipped only when the schedule is more than 75 % of a frame time behind |
 | Rates | display 59.98&nbsp;Hz in 512 x 240; SNES 60.1&nbsp;Hz; about one frame in 8 s is skipped |
 
-{{img ../img/fig3_attract_c.png Attract demo with sprites and score digits over three background layers. MAME 0.289 driver blitz99, 512 x 240. The CRC-32 of the displayed buffer equals that of the RGB565 path for 67 frames compared.}}
-
 ## Board Measurements
 
 A-21464 with the boot ROM `seattle_monitor23_27C4001.bin` in U32, Super Mario World (USA) attract demo, sound on, automatic frame skip, texture by DMA, 10-s reports 2 and 3.
@@ -442,4 +438,4 @@ The complete list is in `docs/SNES.md` section 6.
 | P8 texture with the bilinear filter, texture by CPU block writes | untested |
 | Memory | 19&nbsp;KB of the arena free at game start with a 2.4&nbsp;MB image buffer; a second game start without a reset failed once to allocate, cause not established |
 | Compiler options | `-O3` for the core enlarges the image by 123&nbsp;KB and the graphics tables no longer fit the arena |
-| Screen capture on the board | not available in the program; the figures are MAME snapshots |
+| Screen capture on the board | not available in the program; Figure 1 is a MAME snapshot |
