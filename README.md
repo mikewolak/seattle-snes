@@ -11,7 +11,7 @@
 
 | System | Video and sound |
 |---|---|
-| Snes9x 1.39 core: 65C816, SPC700, S-DSP, PPU modes 0 to 7, HDMA, colour math | Frame 256 x 224 or 239, drawn as RGB565 or as 8-bit palette indices |
+| Snes9x 1.39 core: 65C816, SPC700, S-DSP, PPU modes 0 to 7, HDMA, color math | Frame 256 x 224 or 239, drawn as RGB565 or as 8-bit palette indices |
 | 65C816 loop `cpu65.S` (2,306 lines), SPC700 loop `spc700.S` (1,452 lines) | Texture formats RGB565 and P8, written by GT-64010 DMA channel 0 |
 | Tile renderers `tile16.S` (RGB565) and `tile8.S` (palette indices), whole runs of background tiles per call | One textured quad a frame; point or bilinear filter; fill, integer or 1:1 scaling |
 | Every assembler path selectable against the C path at run time | Video modes 512 x 240 (59.98 Hz, default), 512 x 256 (54 Hz), 384 x 240, 512 x 384 |
@@ -32,10 +32,10 @@ The core in C renders 10 frames a second on the 150 MHz R5000, which has 32 KB p
 | Upstream project | Snes9x 1.39 release source `s9xs139.zip`, <https://www.lysator.liu.se/snes9x/1.39/s9xs139.zip>, 666,463 bytes |
 | Upstream SHA-256 | `996b3ed10debca64e02e31f28e3e7f78b3d39608aa918cb739b2c2fa17bce27b` |
 | Authors | Gary Henderson, Jerremy Koot; Super FX, DSP-1 and C4 code by the contributors named in `copyright.h` |
-| Licence | Snes9x licence: use, copy, modify and distribute for non-commercial purposes (`docs/SNES.md` section 1.1 quotes it) |
+| License | Snes9x license: use, copy, modify and distribute for non-commercial purposes (`docs/SNES.md` section 1.1 quotes it) |
 | Untouched upstream copy | not in this repository; the archive above |
 | Core changes | `patches/snes9x-1.39-seattle.patch`; applied to the unpacked archive it reproduces the build tree |
-| Platform layer and assembler | `snes/`, by Mike Wolak, EPROM Foundry Inc., project Blitz99; the opcode semantics of `cpu65.S` and `spc700.S` are those of the Snes9x 1.39 sources (work derived from Snes9x, Snes9x licence) |
+| Platform layer and assembler | `snes/`, by Mike Wolak, EPROM Foundry Inc., project Blitz99; the opcode semantics of `cpu65.S` and `spc700.S` are those of the Snes9x 1.39 sources (work derived from Snes9x, Snes9x license) |
 | Host tree | bring-up monitor, repository seattle-quake2, branch `bringup-rom`, commit `de321c5`; `snes/` is its `bringup/snes/` |
 | Palette download | register sequence of `_grTexDownloadPalette`, Glide 2.x, 3Dfx Interactive |
 | File system | FatFs R0.16, ChaN (in the host tree) |
@@ -47,11 +47,11 @@ No game image, no Midway software and no Snes9x source file is in this repositor
 
 | Area | Change | Reason |
 |---|---|---|
-| `tile.cpp` `DrawTile16`, `DrawClippedTile16` | colour table and depths in locals; four depth bytes compared in one word; a group of four pixels skipped or written whole | the byte stores to the depth buffer made the compiler reload the values for every pixel |
+| `tile.cpp` `DrawTile16`, `DrawClippedTile16` | color table and depths in locals; four depth bytes compared in one word; a group of four pixels skipped or written whole | the byte stores to the depth buffer made the compiler reload the values for every pixel |
 | `tile.cpp` `ConvertTile` | result 3 for a tile with no pixel of value 0 | the row loops for such tiles omit the zero test |
 | `gfx.cpp` `S9xUpdateScreen` | lines rendered in strips of 16; backdrop passes by depth words; sub screen drawn into the main screen for backdrop-only addition | a strip of the screen and depth buffers stays in the 32 KB data cache; each pixel is written once |
 | `gfx.cpp` `DrawBackground` | runs of unclipped 8 x 8 tiles passed to `s9x_tilerun16` or `s9x_tilerun8` | 2,100 of 4,000 tile calls a frame are for blank tiles; the per-tile set-up is read once per run |
-| `gfx.cpp` `S9xUpdateScreenLines` | frame of 8-bit palette indices for BG modes 0 and 1 without per-pixel colour math; expansion to RGB565 on a change of the colours within a frame | a group of four pixels becomes one word store; the texture is half the size |
+| `gfx.cpp` `S9xUpdateScreenLines` | frame of 8-bit palette indices for BG modes 0 and 1 without per-pixel color math; expansion to RGB565 on a change of the colors within a frame | a group of four pixels becomes one word store; the texture is half the size |
 | `soundux.cpp` `MixStereo` | envelope error, rate and sample counter in locals | read and written once per channel instead of once per sample |
 | `memmap.h`, `memmap.cpp` | image buffer size from the build (`S9X_MAX_ROM_SIZE`); C4 RAM placed below the scratch area at the top of a buffer under 0x412000 bytes | 8 MB of DRAM hold the disk build, 2.3 MB of core tables and at most a 2.5 MB image buffer |
 | `dsp1.h` | declaration of `DSP1` moved inside the `extern "C"` block | GCC 12 rejects the declaration with C++ linkage that precedes the definition |
@@ -118,7 +118,7 @@ Release build of this revision: payload 1,358,916 bytes, CRC32 6f5d6ab9; card im
 |---|---|
 | Games other than Super Mario World (USA) | untested |
 | Super FX, SA-1, DSP-1, C4, S-DD1, HiROM images, PAL timing | untested |
-| Frame of palette indices in BG mode 0, with 16 x 16 tiles, with colour windows | untested |
-| BG modes 2 to 7, mosaic, colour math on a layer | drawn as RGB565 by the C renderer; speed not measured |
+| Frame of palette indices in BG mode 0, with 16 x 16 tiles, with color windows | untested |
+| BG modes 2 to 7, mosaic, color math on a layer | drawn as RGB565 by the C renderer; speed not measured |
 | Memory | 19 KB of the arena free at game start; a second game start without a reset failed once to allocate, cause not established |
 | Build outside the host tree | not provided: the platform layer uses the Voodoo, interrupt, sound, file-system and monitor code of the bring-up tree |

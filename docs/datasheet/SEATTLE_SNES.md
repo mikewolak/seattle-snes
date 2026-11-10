@@ -4,10 +4,10 @@ pn: SNES-A21464
 rev: Rev.&nbsp;1 &middot; 2026-11-10
 contact_right: Midway A-21464 Seattle &middot; R5000 150&nbsp;MHz &middot; Voodoo SST-1 &middot; measured on the unit under test
 title: SNES Emulator for the Midway Seattle Board &mdash; Snes9x 1.39
-subtitle: Port of the Snes9x 1.39 core to the Midway A-21464 arcade board (QED R5000 at 150&nbsp;MHz, 8&nbsp;MB DRAM, 3Dfx Voodoo SST-1 with one TMU, DCS2 ADSP-2115 sound). The 65C816 loop, the SPC700 loop, the tile renderers and the line fills are R5000 assembler; the frame is drawn as 8-bit palette indices and coloured by the texture unit. Super Mario World runs at 60.0 emulated and 59.8 shown frames a second on the board.
+subtitle: Port of the Snes9x 1.39 core to the Midway A-21464 arcade board (QED R5000 at 150&nbsp;MHz, 8&nbsp;MB DRAM, 3Dfx Voodoo SST-1 with one TMU, DCS2 ADSP-2115 sound). The 65C816 loop, the SPC700 loop, the tile renderers and the line fills are R5000 assembler; the frame is drawn as 8-bit palette indices and colored by the texture unit. Super Mario World runs at 60.0 emulated and 59.8 shown frames a second on the board.
 footer_left: Rev.&nbsp;1 &nbsp;|&nbsp; SNES Emulator for the Midway Seattle Board
 footer_right: 2026-11-10
-legal: Platform layer, assembler loops, core changes and this document by Mike Wolak, EPROM Foundry Inc., project Blitz99 (repositories seattle-snes and seattle-quake2). Snes9x 1.39 is the work of Gary Henderson, Jerremy Koot and the contributors named in its copyright.h and is distributed under the Snes9x licence (non-commercial use). The palette download sequence follows _grTexDownloadPalette of Glide 2.x, 3Dfx Interactive. Super Mario World is a work of Nintendo; no game image is distributed. Midway and NFL Blitz are marks of their owners.
+legal: Platform layer, assembler loops, core changes and this document by Mike Wolak, EPROM Foundry Inc., project Blitz99 (repositories seattle-snes and seattle-quake2). Snes9x 1.39 is the work of Gary Henderson, Jerremy Koot and the contributors named in its copyright.h and is distributed under the Snes9x license (non-commercial use). The palette download sequence follows _grTexDownloadPalette of Glide 2.x, 3Dfx Interactive. Super Mario World is a work of Nintendo; no game image is distributed. Midway and NFL Blitz are marks of their owners.
 ---
 ::: front
 #### SUMMARY
@@ -43,7 +43,7 @@ legal: Platform layer, assembler loops, core changes and this document by Mike W
 
 The emulator is the Snes9x 1.39 release source with a platform layer for the Midway Seattle board and a set of changes to the core. It is built into the disk build of the board's bring-up monitor and started from the launch menu of the boot ROM. Games are read from the `/snes` directory of an exFAT volume on the CompactFlash card; battery RAM is kept in `/saves`.
 
-The board has a QED R5000 at 150&nbsp;MHz with 32&nbsp;KB primary caches and no second-level cache, 8&nbsp;MB of DRAM behind a Galileo GT-64010 system controller, a 3Dfx Voodoo SST-1 with one texture unit and 4&nbsp;MB of texture memory on a 33&nbsp;MHz PCI bus, and the Midway DCS2 sound board with an ADSP-2115. The core in C renders 10 frames a second on this processor. The work recorded here replaces the inner loops of the core by R5000 assembler, changes the drawing path so that each pixel is written once, and moves the colour lookup and the scaling of the frame to the Voodoo.
+The board has a QED R5000 at 150&nbsp;MHz with 32&nbsp;KB primary caches and no second-level cache, 8&nbsp;MB of DRAM behind a Galileo GT-64010 system controller, a 3Dfx Voodoo SST-1 with one texture unit and 4&nbsp;MB of texture memory on a 33&nbsp;MHz PCI bus, and the Midway DCS2 sound board with an ADSP-2115. The core in C renders 10 frames a second on this processor. The work recorded here replaces the inner loops of the core by R5000 assembler, changes the drawing path so that each pixel is written once, and moves the color lookup and the scaling of the frame to the Voodoo.
 
 ## Functional Block Diagram
 
@@ -98,7 +98,7 @@ A-21464 board, boot ROM `seattle_monitor23_27C4001.bin`, release disk build, Sup
 
 | System | Video and sound |
 |---|---|
-| Snes9x 1.39 core: 65C816, SPC700, S-DSP, PPU modes 0 to 7, HDMA, colour math | Frame 256 x 224 or 239, drawn as RGB565 or as 8-bit palette indices |
+| Snes9x 1.39 core: 65C816, SPC700, S-DSP, PPU modes 0 to 7, HDMA, color math | Frame 256 x 224 or 239, drawn as RGB565 or as 8-bit palette indices |
 | 65C816 loop `cpu65.S`, SPC700 loop `spc700.S`, both selectable against the C loops at run time | Texture formats RGB565 and P8, 256 texels a row, written by GT-64010 DMA channel 0 |
 | Tile renderers `tile16.S` (RGB565) and `tile8.S` (palette indices), selectable against the C renderer | One textured quad a frame, point or bilinear filter, fill, integer or 1:1 scaling |
 | Renders in strips of 16 lines that stay in the 32&nbsp;KB data cache | Video modes 512 x 240 (59.98&nbsp;Hz, default), 512 x 256 (54&nbsp;Hz), 384 x 240, 512 x 384 |
@@ -113,7 +113,7 @@ A-21464 board, boot ROM `seattle_monitor23_27C4001.bin`, release disk build, Sup
 | Upstream project | Snes9x 1.39 release source `s9xs139.zip`, <https://www.lysator.liu.se/snes9x/1.39/s9xs139.zip>, 666,463 bytes |
 | Upstream SHA-256 | `996b3ed10debca64e02e31f28e3e7f78b3d39608aa918cb739b2c2fa17bce27b` |
 | Authors | Gary Henderson, Jerremy Koot; Super FX, DSP-1 and C4 code by the contributors named in `copyright.h` |
-| Licence | Snes9x licence: use, copy, modify and distribute for non-commercial purposes |
+| License | Snes9x license: use, copy, modify and distribute for non-commercial purposes |
 | Core changes | `patches/snes9x-1.39-seattle.patch`: applied to the unpacked archive it reproduces the build tree |
 | Platform layer | `snes/`: `s9x_seattle.c`, `s9x_cpu.cpp`, `s9x_offs.cpp`, `s9x_port.h`, `menu.c`, and the assembler files of the next section |
 | Host tree | bring-up monitor of the Blitz99 project, repository seattle-quake2, branch `bringup-rom`, commit `de321c5` |
@@ -126,14 +126,14 @@ A-21464 board, boot ROM `seattle_monitor23_27C4001.bin`, release disk build, Sup
 |---|---|---|---|
 | `cpu65.S` | 2,306 | `s9xa_run` | `S9xMainLoop` of `cpuexec.cpp` with the opcode handlers of `cpuops.cpp` |
 | `spc700.S` | 1,452 | `s9xa_spc_sync` | the `APU_EXECUTE` loop and the opcode functions of `spc700.cpp` |
-| `draw.S` | 75 | `s9x_fill_lines`, `s9x_copy_lines` | word-store loops and `memset` of the depth and back-colour line fills |
+| `draw.S` | 75 | `s9x_fill_lines`, `s9x_copy_lines` | word-store loops and `memset` of the depth and back-color line fills |
 | `blit.S` | 94 | `snes_blit_asm` | the 1:1 copy of the frame to the linear frame buffer (scaling 1:1 only) |
 | `tile16.S` | 589 | `s9x_tile16`, `s9x_ctile16`, `s9x_tilerun16` | `DrawTile16`, `DrawClippedTile16` of `tile.cpp`, the middle loop of `DrawBackground` |
 | `tile8.S` | 521 | `s9x_tile8`, `s9x_ctile8`, `s9x_tilerun8` | the same three for a frame of 8-bit palette indices |
 
 All routines are o32, little-endian, MIPS III instructions with the R5000 cache operations. Integer registers hold 32-bit values only: the interrupt entry of the host tree saves 32 bits of each register, so a 64-bit integer value does not survive an interrupt. Structure offsets of the core come from `s9x_offs.h`, generated by compiling `s9x_offs.cpp` to assembler text.
 
-## Performance by Optimisation Step
+## Performance by Optimization Step
 
 Board, Super Mario World attract demo, sound on, automatic frame skip, 10-s reports. A rendered frame is emulation plus drawing; a skipped frame is emulation alone. Each row adds its step to the rows above.
 
@@ -271,7 +271,7 @@ A tile row is two words of the tile cache, one pixel value in each byte. The fou
     addu    $v0, $t5, $v0               # t5 = the palette of the tile
     srl     $v1, $t0, 7                 # pixel 1 x 2
     andi    $v1, $v1, 0x1fe
-    lhu     $v0, 0($v0)                 # colour of pixel 0
+    lhu     $v0, 0($v0)                 # color of pixel 0
     addu    $v1, $t5, $v1
     srl     $t2, $t0, 15                # pixel 2 x 2
     andi    $t2, $t2, 0x1fe
@@ -319,7 +319,7 @@ Tile statistics of the attract demo, average of a rendered frame: 4,000 tile cal
 
 ## Tile Renderer for Palette Indices (tile8.S)
 
-In a frame of palette indices each pixel is one byte: the pixel value plus the palette base of the tile, which is the index of the colour that the RGB565 renderer reads from the colour table. The sum is below 256 for every tile of 2 or 4 bits a pixel, so the four pixels of a group are formed by one addition and stored as one word. The four table lookups and four halfword stores of the listing above are not executed. A group written in part is merged under a byte mask without a branch per pixel.
+In a frame of palette indices each pixel is one byte: the pixel value plus the palette base of the tile, which is the index of the color that the RGB565 renderer reads from the color table. The sum is below 256 for every tile of 2 or 4 bits a pixel, so the four pixels of a group are formed by one addition and stored as one word. The four table lookups and four halfword stores of the listing above are not executed. A group written in part is merged under a byte mask without a branch per pixel.
 
 ```
     lwl     $t2, 3($a1)                 # four depth bytes
@@ -351,10 +351,10 @@ A group written whole costs 11 instructions against 28. For a tile with pixels o
 
 | Item | Implementation |
 |---|---|
-| Lines drawn as indices | BG modes 0 and 1 without mosaic, with no colour math in operation or with addition of the sub screen to the backdrop only |
-| Entry 16 | pixel value 0 of a palette, never drawn by a tile; holds the fixed colour or black for the frame |
-| Colours of a frame | the 255 colours and entry 16 at the first lines of the frame |
-| Change within a frame | of a colour, of entry 16, of the BG mode or of the colour math: the lines drawn are expanded to RGB565 and the frame continues as RGB565; the next 60 rendered frames are RGB565 from their first line |
+| Lines drawn as indices | BG modes 0 and 1 without mosaic, with no color math in operation or with addition of the sub screen to the backdrop only |
+| Entry 16 | pixel value 0 of a palette, never drawn by a tile; holds the fixed color or black for the frame |
+| Colors of a frame | the 255 colors and entry 16 at the first lines of the frame |
+| Change within a frame | of a color, of entry 16, of the BG mode or of the color math: the lines drawn are expanded to RGB565 and the frame continues as RGB565; the next 60 rendered frames are RGB565 from their first line |
 | Frame buffer | 256 bytes a line, 57,344 bytes a frame of 224 lines; the RGB565 frame is 114,688 bytes |
 
 ## Video Path
@@ -410,7 +410,7 @@ Every shown frame of the release build is a frame of palette indices (598 of 598
 
 ## Settings
 
-File `/snes/snes9x.cfg`, one `name value` a line. The settings that select the optimised paths:
+File `/snes/snes9x.cfg`, one `name value` a line. The settings that select the optimized paths:
 
 | Name | Values | Default | Effect |
 |---|---|---|---|
@@ -433,8 +433,8 @@ The complete list is in `docs/SNES.md` section 6.
 |---|---|
 | Games other than Super Mario World (USA) | untested |
 | Super FX, SA-1, DSP-1, C4, S-DD1, HiROM images, PAL timing | untested |
-| Frame of palette indices in BG mode 0, with 16 x 16 tiles, with colour windows | untested |
-| BG modes 2 to 7, mosaic, colour math on a layer | drawn as RGB565 by the C renderer; speed not measured |
+| Frame of palette indices in BG mode 0, with 16 x 16 tiles, with color windows | untested |
+| BG modes 2 to 7, mosaic, color math on a layer | drawn as RGB565 by the C renderer; speed not measured |
 | P8 texture with the bilinear filter, texture by CPU block writes | untested |
 | Memory | 19&nbsp;KB of the arena free at game start with a 2.4&nbsp;MB image buffer; a second game start without a reset failed once to allocate, cause not established |
 | Compiler options | `-O3` for the core enlarges the image by 123&nbsp;KB and the graphics tables no longer fit the arena |
